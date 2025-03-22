@@ -4,6 +4,10 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// Polyfill para Buffer en el navegador
+import { Buffer } from 'buffer';
+window.Buffer = window.Buffer || Buffer;
+
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
