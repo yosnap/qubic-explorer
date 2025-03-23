@@ -34,7 +34,7 @@ const Header: React.FC = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between py-4">
           <Link to="/" className="text-xl font-bold no-underline text-white">
-            Qubic Explorer
+            Qubic Sentinel
           </Link>
 
           <div className="hidden md:flex items-center gap-4">

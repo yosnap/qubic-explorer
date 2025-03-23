@@ -126,10 +126,26 @@ const AddressDetail: React.FC = () => {
       console.warn('Toast manager no encontrado');
     }
     
-    // Si el usuario ha dado permiso para notificaciones del navegador, mostrar una
-    if (permissionGranted) {
-      try {
-        console.log('Creando notificación del navegador');
+    // Siempre intentar mostrar una notificación del sistema
+    try {
+      console.log('Creando notificación del navegador');
+      // Solicitar permiso si aún no se ha concedido
+      if (Notification.permission !== 'granted') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            setPermissionGranted(true);
+            // Crear la notificación después de obtener permiso
+            const notification = new Notification(title, {
+              body: message,
+              icon: type === 'incoming' ? '/icons/incoming.png' : '/icons/outgoing.png'
+            });
+            
+            // Cerrar automáticamente después de 5 segundos
+            setTimeout(() => notification.close(), 5000);
+          }
+        });
+      } else {
+        // Si ya tenemos permiso, mostrar la notificación directamente
         const notification = new Notification(title, {
           body: message,
           icon: type === 'incoming' ? '/icons/incoming.png' : '/icons/outgoing.png'
@@ -137,13 +153,10 @@ const AddressDetail: React.FC = () => {
         
         // Cerrar automáticamente después de 5 segundos
         setTimeout(() => notification.close(), 5000);
-      } catch (error) {
-        console.error('Error al crear notificación:', error);
       }
-    } else {
-      // Si no hay permiso para notificaciones, mostrar un alert
-      console.log('Sin permiso para notificaciones, mostrando alert');
-      alert(`${title}\n${message}`);
+    } catch (error) {
+      console.error('Error al crear notificación:', error);
+      // No mostramos alert como fallback
     }
     
     // Reproducir un sonido de notificación
@@ -153,7 +166,7 @@ const AddressDetail: React.FC = () => {
     } catch (error) {
       console.error('Error al crear objeto de audio:', error);
     }
-  }, [permissionGranted]);
+  }, []);
 
   // Función para guardar el estado de seguimiento en localStorage
   const saveTrackingState = useCallback((address: string, isTracking: boolean) => {
@@ -361,8 +374,13 @@ const AddressDetail: React.FC = () => {
       // No desactivamos el seguimiento local si hay error de conexión
       setTrackingLoading(false);
       
-      // Mostrar un mensaje pero mantener el seguimiento activo
-      alert('No se pudo conectar al servicio de notificaciones. El seguimiento funcionará solo mientras estés en la aplicación.');
+      // Mostrar un mensaje de error en la UI en lugar de un alert
+      setError('No se pudo conectar al servicio de notificaciones. El seguimiento funcionará solo mientras estés en la aplicación.');
+      
+      // Mostrar el error por 5 segundos y luego limpiarlo
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
     });
     
     // Manejar desconexión
@@ -483,6 +501,21 @@ const AddressDetail: React.FC = () => {
     if ('Notification' in window) {
       if (Notification.permission === 'granted') {
         setPermissionGranted(true);
+      } else if (Notification.permission !== 'denied') {
+        // Si el permiso no está denegado ni concedido, solicitarlo automáticamente
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            setPermissionGranted(true);
+            // Mostrar una notificación de prueba para confirmar que funciona
+            const notification = new Notification('Notificaciones activadas', {
+              body: 'Recibirás notificaciones cuando haya cambios en las direcciones que sigues.',
+              icon: '/icons/app-icon.png'
+            });
+            
+            // Cerrar automáticamente después de 5 segundos
+            setTimeout(() => notification.close(), 5000);
+          }
+        });
       }
     }
   }, []);
@@ -500,6 +533,20 @@ const AddressDetail: React.FC = () => {
   // Renderizado de la página
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Mensaje de error de conexión */}
+      {error && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md">
+          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow-lg">
+            <div className="flex items-center">
+              <svg className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="font-medium">{error}</span>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Notificación */}
       {notification && notification.show && (
         <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${
@@ -556,15 +603,6 @@ const AddressDetail: React.FC = () => {
         <div className="bg-white rounded-lg shadow-md p-6 text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-main"></div>
           <p className="mt-2 text-gray-500">Cargando información...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-red-500 mb-2">
-            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <p className="text-red-500">{error}</p>
         </div>
       ) : addressDetails ? (
         <div className="grid grid-cols-1 gap-6">
