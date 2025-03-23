@@ -162,7 +162,7 @@ const Wallet: React.FC = () => {
                 <div className="flex items-center">
                   <p className="text-2xl font-bold">{balance} QU</p>
                   <button 
-                    className="ml-2 text-primary-main hover:text-primary-dark"
+                    className="ml-2 text-white hover:text-primary-dark"
                     onClick={refreshBalance}
                     disabled={isLoading}
                   >
