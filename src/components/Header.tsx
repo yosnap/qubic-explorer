@@ -1,85 +1,44 @@
 import React from 'react';
-import { 
-  AppBar, 
-  Toolbar, 
-  Typography, 
-  Button, 
-  Box, 
-  Chip,
-  Container,
-  useTheme,
-  useMediaQuery
-} from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQubic } from '../context/QubicContext';
 
 const Header: React.FC = () => {
   const { currentTick, identity, balance } = useQubic();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   return (
-    <AppBar position="static" color="primary">
-      <Container maxWidth="lg">
-        <Toolbar>
-          <Typography
-            variant="h6"
-            component={RouterLink}
-            to="/"
-            sx={{
-              flexGrow: 1,
-              textDecoration: 'none',
-              color: 'white',
-              fontWeight: 'bold'
-            }}
-          >
+    <header className="bg-primary-main text-white shadow-md">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between py-4">
+          <Link to="/" className="text-xl font-bold no-underline text-white">
             Qubic Explorer
-          </Typography>
+          </Link>
 
-          {!isMobile && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Chip 
-                label={`Tick: ${currentTick}`} 
-                color="secondary" 
-                variant="outlined" 
-              />
-              
-              {identity && (
-                <Chip 
-                  label={`Balance: ${balance} QU`} 
-                  color="secondary" 
-                  variant="outlined" 
-                />
-              )}
-            </Box>
-          )}
+          <div className="hidden md:flex items-center gap-4">
+            <div className="bg-primary-dark bg-opacity-30 text-white px-3 py-1 rounded-full text-sm">
+              Tick: {currentTick}
+            </div>
+            
+            {identity && (
+              <div className="bg-primary-dark bg-opacity-30 text-white px-3 py-1 rounded-full text-sm">
+                Balance: {balance} QU
+              </div>
+            )}
+          </div>
 
-          <Box sx={{ ml: 2, display: 'flex', gap: 1 }}>
-            <Button 
-              color="inherit" 
-              component={RouterLink} 
-              to="/wallet"
-            >
+          <nav className="flex gap-3">
+            <Link to="/wallet" className="text-white hover:text-gray-200 px-2 py-1">
               Wallet
-            </Button>
-            <Button 
-              color="inherit" 
-              component={RouterLink} 
-              to="/contract"
-            >
+            </Link>
+            <Link to="/contract" className="text-white hover:text-gray-200 px-2 py-1">
               Contract
-            </Button>
-            <Button 
-              color="inherit" 
-              component={RouterLink} 
-              to="/transactions"
-            >
+            </Link>
+            <Link to="/transactions" className="text-white hover:text-gray-200 px-2 py-1">
               Transactions
-            </Button>
-          </Box>
-        </Toolbar>
-      </Container>
-    </AppBar>
+            </Link>
+          </nav>
+        </div>
+      </div>
+    </header>
   );
 };
 

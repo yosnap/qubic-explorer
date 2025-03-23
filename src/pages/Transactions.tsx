@@ -1,32 +1,6 @@
 import React, { useState, useEffect } from "react";
-import {
-  Container,
-  Box,
-  Typography,
-  Paper,
-  Grid,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  Chip,
-  CircularProgress,
-  TextField,
-  Button,
-  Card,
-  CardContent,
-  Alert,
-} from "@mui/material";
-import {
-  ArrowForward as ArrowForwardIcon,
-  ArrowDownward as ArrowDownwardIcon,
-  ArrowUpward as ArrowUpwardIcon,
-  Search as SearchIcon,
-} from "@mui/icons-material";
 import { useQubic } from "../context/QubicContext";
+import { qubicService } from "../services/qubicService";
 
 // Interfaz para transacciones
 interface Transaction {
@@ -40,48 +14,9 @@ interface Transaction {
   status: "confirmed" | "pending";
 }
 
-// Para demo, generamos datos de ejemplo
-const generateMockTransactions = (
-  count: number,
-  address?: string
-): Transaction[] => {
-  const types: Array<"transfer" | "contract" | "burn"> = [
-    "transfer",
-    "contract",
-    "burn",
-  ];
-  const statuses: Array<"confirmed" | "pending"> = ["confirmed", "pending"];
-
-  const randomAddress = () => {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    return Array(50)
-      .fill(0)
-      .map(() => chars.charAt(Math.floor(Math.random() * chars.length)))
-      .join("");
-  };
-
-  return Array(count)
-    .fill(0)
-    .map((_, index) => {
-      const isOutgoing = Math.random() > 0.5;
-      const source = isOutgoing ? address || randomAddress() : randomAddress();
-      const target = isOutgoing ? randomAddress() : address || randomAddress();
-
-      return {
-        id: `tx-${Date.now()}-${index}`,
-        sourceAddress: source,
-        targetAddress: target,
-        amount: (Math.random() * 1000).toFixed(0),
-        tick: Math.floor(Math.random() * 100000),
-        timestamp: new Date(Date.now() - Math.random() * 86400000 * 7), // Últimos 7 días
-        type: types[Math.floor(Math.random() * types.length)],
-        status: statuses[Math.floor(Math.random() * statuses.length)],
-      };
-    });
-};
-
 const Transactions: React.FC = () => {
-  const { identity } = useQubic();
+  // Quitamos identity para evitar la advertencia de ESLint
+  // const { identity } = useQubic();
 
   // Estado local
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -93,30 +28,51 @@ const Transactions: React.FC = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Cargar transacciones al montar o cuando cambia la identidad
+  // Cargar transacciones al montar o cuando cambia la página/tamaño
   useEffect(() => {
     const fetchTransactions = async () => {
       setIsLoading(true);
 
       try {
-        // En una implementación real, aquí llamaríamos a la API
-        // Pero por ahora, usamos datos de ejemplo
-        const mockData = generateMockTransactions(35, identity?.address);
-
-        // Ordenar por timestamp más reciente
-        mockData.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-        setTransactions(mockData);
-        setFilteredTransactions(mockData);
+        // Usar el método del servicio para obtener transacciones
+        const transactionsData = await qubicService.getTransactions(page, rowsPerPage);
+        
+        console.log('Transacciones obtenidas en el componente:', transactionsData);
+        
+        if (Array.isArray(transactionsData) && transactionsData.length > 0) {
+          // Asegurarnos de que los datos son del tipo correcto
+          const formattedTransactions = transactionsData.map(tx => ({
+            id: tx.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            sourceAddress: tx.sourceAddress || "Desconocido",
+            targetAddress: tx.targetAddress || "Desconocido",
+            amount: tx.amount?.toString() || "0",
+            tick: tx.tick || 0,
+            timestamp: tx.timestamp instanceof Date ? tx.timestamp : new Date(),
+            type: (tx.type === "transfer" || tx.type === "contract" || tx.type === "burn") 
+              ? tx.type as "transfer" | "contract" | "burn" 
+              : "transfer",
+            status: tx.status === "pending" ? "pending" : "confirmed" as "confirmed" | "pending"
+          }));
+          
+          setTransactions(formattedTransactions);
+          setFilteredTransactions(formattedTransactions);
+          console.log('Transacciones formateadas:', formattedTransactions);
+        } else {
+          console.warn('No se recibieron transacciones válidas');
+          setTransactions([]);
+          setFilteredTransactions([]);
+        }
       } catch (error) {
         console.error("Error al cargar transacciones:", error);
+        setTransactions([]);
+        setFilteredTransactions([]);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchTransactions();
-  }, [identity]);
+  }, [page, rowsPerPage]);
 
   // Filtrar transacciones cuando cambia el término de búsqueda
   useEffect(() => {
@@ -139,228 +95,227 @@ const Transactions: React.FC = () => {
   }, [searchTerm, transactions]);
 
   // Manejadores
-  const handleChangePage = (_event: unknown, newPage: number) => {
+  const handleChangePage = (newPage: number) => {
     setPage(newPage);
   };
 
-  const handleChangeRowsPerPage = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
+  const handleChangeRowsPerPage = (perPage: number) => {
+    setRowsPerPage(perPage);
     setPage(0);
   };
 
-  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
   };
 
-  // Renderizar tipo de transacción - Corregido para TypeScript
   const renderTransactionType = (type: string, status: string) => {
-    let color = "default";
+    let bgColor = "";
+    let textColor = "";
+    let icon = null;
+    let label = "";
 
-    switch (type) {
-      case "transfer":
-        color = "primary";
-        break;
-      case "contract":
-        color = "info";
-        break;
-      case "burn":
-        color = "error";
-        break;
+    if (type === "transfer") {
+      bgColor = "bg-blue-100";
+      textColor = "text-blue-800";
+      label = "Transferencia";
+      icon = (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+        </svg>
+      );
+    } else if (type === "contract") {
+      bgColor = "bg-purple-100";
+      textColor = "text-purple-800";
+      label = "Contrato";
+      icon = (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+    } else if (type === "burn") {
+      bgColor = "bg-red-100";
+      textColor = "text-red-800";
+      label = "Quema";
+      icon = (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+        </svg>
+      );
     }
 
-    // Versión corregida sin icono para evitar el error de tipo
+    const statusColor = status === "confirmed" ? "bg-green-400" : "bg-yellow-400";
+
     return (
-      <Chip
-        label={type.charAt(0).toUpperCase() + type.slice(1)}
-        color={color as any}
-        variant={status === "pending" ? "outlined" : "filled"}
-        size="small"
-      />
+      <div className={`flex items-center px-2 py-1 rounded-full ${bgColor} ${textColor}`}>
+        {icon}
+        <span className="text-xs">{label}</span>
+        <span className={`ml-1 h-2 w-2 rounded-full ${statusColor}`}></span>
+      </div>
     );
   };
 
-  // Renderizar dirección truncada
   const truncateAddress = (address: string, length: number = 10) => {
-    if (address.length <= length * 2) return address;
+    if (!address) return "";
     return `${address.substring(0, length)}...${address.substring(
       address.length - length
     )}`;
   };
 
+  const formatDate = (date: Date) => {
+    return date.toLocaleString();
+  };
+
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Historial de Transacciones
-      </Typography>
+    <div className="container mx-auto px-4 mt-8 mb-8">
+      <h1 className="text-2xl font-bold mb-6">Historial de Transacciones</h1>
 
-      <Grid container spacing={3}>
-        {/* Filtro y búsqueda */}
-        <Grid item xs={12}>
-          <Paper elevation={2} sx={{ p: 2, mb: 3 }}>
-            <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-              <TextField
-                fullWidth
-                placeholder="Buscar por dirección, monto o tick..."
-                variant="outlined"
-                size="small"
-                value={searchTerm}
-                onChange={handleSearch}
-                InputProps={{
-                  startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
-                }}
-              />
-              <Button variant="contained">Buscar</Button>
-            </Box>
-          </Paper>
-        </Grid>
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              className="pl-10 pr-4 py-2 w-full md:w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-main"
+              placeholder="Buscar por dirección, monto o tick..."
+              value={searchTerm}
+              onChange={handleSearch}
+            />
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <select 
+              className="py-2 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-main"
+              value={rowsPerPage}
+              onChange={(e) => handleChangeRowsPerPage(parseInt(e.target.value, 10))}
+            >
+              <option value={5}>5 por página</option>
+              <option value={10}>10 por página</option>
+              <option value={25}>25 por página</option>
+              <option value={50}>50 por página</option>
+            </select>
+          </div>
+        </div>
 
-        {/* Resumen de transacciones */}
-        <Grid item xs={12} md={4}>
-          <Card sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Total de Transacciones
-              </Typography>
-              <Typography variant="h3" color="primary">
-                {transactions.length}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+        {isLoading ? (
+          <div className="flex justify-center my-12">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-b-2 border-primary-main"></div>
+          </div>
+        ) : filteredTransactions.length > 0 ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tipo
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Origen
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Destino
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Monto
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tick
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Fecha
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredTransactions
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((tx) => (
+                      <tr key={tx.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {renderTransactionType(tx.type, tx.status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-900">
+                            {truncateAddress(tx.sourceAddress)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-900">
+                            {truncateAddress(tx.targetAddress)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium">
+                            {tx.amount} QU
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-500">
+                            {tx.tick}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-500">
+                            {formatDate(tx.timestamp)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
 
-        <Grid item xs={12} md={8}>
-          <Grid container spacing={2}>
-            <Grid item xs={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="body2" color="text.secondary">
-                    Transferencias
-                  </Typography>
-                  <Typography variant="h5" color="primary">
-                    {transactions.filter((tx) => tx.type === "transfer").length}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="body2" color="text.secondary">
-                    Llamadas a Contrato
-                  </Typography>
-                  <Typography variant="h5" color="info.main">
-                    {transactions.filter((tx) => tx.type === "contract").length}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="body2" color="text.secondary">
-                    Quemadas (Burn)
-                  </Typography>
-                  <Typography variant="h5" color="error">
-                    {transactions.filter((tx) => tx.type === "burn").length}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Grid>
-
-        {/* Tabla de transacciones */}
-        <Grid item xs={12}>
-          <Paper elevation={3}>
-            {isLoading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : filteredTransactions.length > 0 ? (
-              <>
-                <TableContainer>
-                  <Table sx={{ minWidth: 650 }}>
-                    <TableBody>
-                      {filteredTransactions
-                        .slice(
-                          page * rowsPerPage,
-                          page * rowsPerPage + rowsPerPage
-                        )
-                        .map((tx) => (
-                          <TableRow key={tx.id} hover>
-                            <TableCell>
-                              {renderTransactionType(tx.type, tx.status)}
-                            </TableCell>
-                            <TableCell>
-                              <Chip
-                                label={truncateAddress(tx.sourceAddress)}
-                                variant="outlined"
-                                size="small"
-                                color={
-                                  identity?.address === tx.sourceAddress
-                                    ? "primary"
-                                    : "default"
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Chip
-                                label={truncateAddress(tx.targetAddress)}
-                                variant="outlined"
-                                size="small"
-                                color={
-                                  identity?.address === tx.targetAddress
-                                    ? "primary"
-                                    : "default"
-                                }
-                              />
-                            </TableCell>
-                            <TableCell align="right">
-                              <Typography
-                                variant="body2"
-                                color={
-                                  identity?.address === tx.sourceAddress
-                                    ? "error"
-                                    : "success.main"
-                                }
-                                sx={{ fontWeight: "bold" }}
-                              >
-                                {identity?.address === tx.sourceAddress
-                                  ? "-"
-                                  : "+"}
-                                {tx.amount} QU
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="right">{tx.tick}</TableCell>
-                            <TableCell>
-                              {tx.timestamp.toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-                <TablePagination
-                  rowsPerPageOptions={[5, 10, 25]}
-                  component="div"
-                  count={filteredTransactions.length}
-                  rowsPerPage={rowsPerPage}
-                  page={page}
-                  onPageChange={handleChangePage}
-                  onRowsPerPageChange={handleChangeRowsPerPage}
-                />
-              </>
-            ) : (
-              <Alert severity="info" sx={{ m: 2 }}>
-                No se encontraron transacciones que coincidan con tu búsqueda.
-              </Alert>
+            <div className="flex justify-between items-center mt-6">
+              <div className="text-sm text-gray-500">
+                Mostrando {Math.min(filteredTransactions.length, page * rowsPerPage + 1)} - {Math.min(filteredTransactions.length, (page + 1) * rowsPerPage)} de {filteredTransactions.length} transacciones
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  className={`px-3 py-1 rounded ${page > 0 ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                  onClick={() => page > 0 && handleChangePage(page - 1)}
+                  disabled={page === 0}
+                >
+                  Anterior
+                </button>
+                {Array.from({ length: Math.ceil(filteredTransactions.length / rowsPerPage) }, (_, i) => (
+                  <button
+                    key={i}
+                    className={`w-8 h-8 rounded-full ${page === i ? 'bg-primary-main text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
+                    onClick={() => handleChangePage(i)}
+                  >
+                    {i + 1}
+                  </button>
+                )).slice(Math.max(0, page - 2), Math.min(Math.ceil(filteredTransactions.length / rowsPerPage), page + 3))}
+                <button
+                  className={`px-3 py-1 rounded ${page < Math.ceil(filteredTransactions.length / rowsPerPage) - 1 ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                  onClick={() => page < Math.ceil(filteredTransactions.length / rowsPerPage) - 1 && handleChangePage(page + 1)}
+                  disabled={page >= Math.ceil(filteredTransactions.length / rowsPerPage) - 1}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500">No se encontraron transacciones</p>
+            {searchTerm && (
+              <p className="text-sm text-gray-400 mt-2">
+                Prueba con otro término de búsqueda
+              </p>
             )}
-          </Paper>
-        </Grid>
-      </Grid>
-    </Container>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 

@@ -2,12 +2,29 @@ import React, { createContext, useState, useEffect, useContext, ReactNode } from
 import { qubicService, IdentityPackage, ContractStats } from '../services/qubicService';
 import { config } from '../config';
 
+// Interfaz para las estadísticas de red
+interface NetworkStats {
+  currentTick: number;
+  ticksInCurrentEpoch: number;
+  emptyTicksInCurrentEpoch: number;
+  epochTickQuality: number;
+  circulatingSupply: string;
+  epochNumber: number;
+  timestamp: number;
+  marketCap: string;
+  price: number;
+  activeAddresses: number;
+  averageTickTime?: number; // Calculado localmente
+}
+
 // Interfaz para el estado del contexto
 interface QubicContextState {
   currentTick: number;
   identity: IdentityPackage | null;
   balance: string;
   contractStats: ContractStats | null;
+  networkStats: NetworkStats | null;
+  tickHistory: { tick: number; timestamp: number }[];
   isLoading: boolean;
   error: string | null;
 }
@@ -17,6 +34,7 @@ interface QubicContextActions {
   createWallet: (seedPhrase: string) => Promise<void>;
   refreshBalance: () => Promise<void>;
   refreshContractStats: () => Promise<void>;
+  refreshNetworkStats: () => Promise<void>;
   executeEcho: (amount: string) => Promise<string>;
   executeBurn: (amount: string) => Promise<string>;
   transferQU: (targetAddress: string, amount: string) => Promise<string>;
@@ -41,18 +59,53 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
     identity: null,
     balance: '0',
     contractStats: null,
+    networkStats: null,
+    tickHistory: [],
     isLoading: false,
     error: null
   });
 
-  // Efecto para actualizar el tick actual periódicamente
+  // Efecto para actualizar las estadísticas de red periódicamente
   useEffect(() => {
-    const fetchTick = async () => {
+    const fetchNetworkStats = async () => {
       try {
-        const tick = await qubicService.getCurrentTick();
-        setState(prev => ({ ...prev, currentTick: tick }));
+        // Obtener estadísticas de red completas
+        const networkStats = await qubicService.getNetworkStats();
+        
+        // Actualizar estado
+        setState(prev => {
+          // Actualizar historial de ticks si el tick ha cambiado
+          let newTickHistory = [...prev.tickHistory];
+          if (networkStats.currentTick !== prev.currentTick) {
+            newTickHistory = [
+              { tick: networkStats.currentTick, timestamp: Date.now() },
+              ...prev.tickHistory
+            ].slice(0, 10); // Mantener los últimos 10 ticks
+          }
+          
+          // Calcular tiempo promedio entre ticks
+          let averageTickTime = 0;
+          if (newTickHistory.length > 1) {
+            const times = [];
+            for (let i = 0; i < newTickHistory.length - 1; i++) {
+              times.push(newTickHistory[i].timestamp - newTickHistory[i + 1].timestamp);
+            }
+            averageTickTime = times.reduce((sum, time) => sum + time, 0) / times.length;
+          }
+          
+          return { 
+            ...prev, 
+            currentTick: networkStats.currentTick,
+            networkStats: {
+              ...networkStats,
+              averageTickTime
+            },
+            tickHistory: newTickHistory,
+            error: null 
+          };
+        });
       } catch (error) {
-        console.error('Error al obtener el tick actual:', error);
+        console.error('Error al obtener estadísticas de red:', error);
         setState(prev => ({ 
           ...prev, 
           error: 'Error de conexión con el nodo Qubic. Por favor, verifica tu conexión.'
@@ -61,14 +114,36 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
     };
 
     // Llamar inmediatamente
-    fetchTick();
+    fetchNetworkStats();
 
     // Configurar intervalo para actualizar periódicamente
-    const interval = setInterval(fetchTick, config.networkRefreshInterval);
+    const interval = setInterval(fetchNetworkStats, config.networkRefreshInterval);
 
     // Limpiar intervalo al desmontar
     return () => clearInterval(interval);
-  }, []);
+  }, []); // Array de dependencias vacío - solo se ejecuta al montar el componente
+
+  // Refrescar estadísticas de red manualmente
+  const refreshNetworkStats = async () => {
+    setState(prev => ({ ...prev, isLoading: true }));
+    try {
+      const networkStats = await qubicService.getNetworkStats();
+      setState(prev => ({ 
+        ...prev, 
+        currentTick: networkStats.currentTick,
+        networkStats,
+        error: null
+      }));
+    } catch (error) {
+      console.error('Error al refrescar estadísticas de red:', error);
+      setState(prev => ({ 
+        ...prev, 
+        error: 'Error al obtener estadísticas de red.'
+      }));
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
 
   // Acciones
   const createWallet = async (seedPhrase: string) => {
@@ -77,7 +152,8 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
       const identity = await qubicService.createIdentity(seedPhrase);
       setState(prev => ({ ...prev, identity }));
       await refreshBalance();
-      await refreshContractStats();
+      // Deshabilitada la actualización de estadísticas para evitar bucles
+      // await refreshContractStats();
     } catch (error) {
       console.error('Error al crear la wallet:', error);
       setState(prev => ({ 
@@ -108,16 +184,12 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
   };
 
   const refreshContractStats = async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState(prev => ({ ...prev, isLoading: true }));
     try {
       const stats = await qubicService.getContractStats(config.hm25ContractIndex);
       setState(prev => ({ ...prev, contractStats: stats }));
     } catch (error) {
       console.error('Error al obtener estadísticas del contrato:', error);
-      setState(prev => ({ 
-        ...prev, 
-        error: 'Error al obtener estadísticas del contrato. Verifica la conexión al nodo.' 
-      }));
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
@@ -140,9 +212,10 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
         throw new Error(result.message);
       }
       
-      // Actualizar estadísticas después de ejecutar Echo
+      // Actualizar solo el balance después de ejecutar Echo
       setTimeout(() => {
-        refreshContractStats();
+        // Deshabilitada la actualización de estadísticas para evitar bucles
+        // refreshContractStats();
         refreshBalance();
       }, 3000); // Esperar 3 segundos para que la transacción se procese
       
@@ -176,9 +249,10 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
         throw new Error(result.message);
       }
       
-      // Actualizar estadísticas después de ejecutar Burn
+      // Actualizar solo el balance después de ejecutar Burn
       setTimeout(() => {
-        refreshContractStats();
+        // Deshabilitada la actualización de estadísticas para evitar bucles
+        // refreshContractStats();
         refreshBalance();
       }, 3000); // Esperar 3 segundos para que la transacción se procese
       
@@ -236,6 +310,7 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
     createWallet,
     refreshBalance,
     refreshContractStats,
+    refreshNetworkStats,
     executeEcho,
     executeBurn,
     transferQU

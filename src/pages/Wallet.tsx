@@ -1,20 +1,4 @@
 import React, { useState } from 'react';
-import {
-  Container,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Paper,
-  Grid,
-  Alert,
-  Snackbar,
-  Card,
-  CardContent,
-  CardActions,
-  Divider,
-  CircularProgress
-} from '@mui/material';
 import { useQubic } from '../context/QubicContext';
 
 const Wallet: React.FC = () => {
@@ -32,7 +16,11 @@ const Wallet: React.FC = () => {
   const [seedPhrase, setSeedPhrase] = useState('');
   const [targetAddress, setTargetAddress] = useState('');
   const [amount, setAmount] = useState('');
-  const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [notification, setNotification] = useState({ 
+    open: false, 
+    message: '', 
+    severity: 'success' as 'success' | 'error' 
+  });
 
   // Manejadores
   const handleCreateWallet = async () => {
@@ -105,172 +93,141 @@ const Wallet: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Wallet Qubic
-      </Typography>
+    <div className="container mx-auto px-4 mt-8 mb-8">
+      <h1 className="text-2xl font-bold mb-4">Wallet Qubic</h1>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
-        </Alert>
+        </div>
       )}
 
-      <Grid container spacing={3}>
+      {notification.open && (
+        <div className={`${
+          notification.severity === 'success' ? 'bg-green-100 border-green-400 text-green-700' : 'bg-red-100 border-red-400 text-red-700'
+        } border px-4 py-3 rounded mb-4 relative`}>
+          <span>{notification.message}</span>
+          <button 
+            className="absolute top-0 right-0 p-1 mt-1 mr-2"
+            onClick={handleCloseNotification}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Sección para crear wallet */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Crear o Importar Wallet
-            </Typography>
-            <Box component="form" noValidate sx={{ mt: 2 }}>
-              <TextField
-                fullWidth
-                label="Frase Semilla"
-                placeholder="Ingresa tu frase semilla"
-                margin="normal"
-                value={seedPhrase}
-                onChange={(e) => setSeedPhrase(e.target.value)}
-                disabled={isLoading}
-              />
-              <Button
-                fullWidth
-                variant="contained"
-                color="primary"
-                sx={{ mt: 2 }}
-                onClick={handleCreateWallet}
-                disabled={isLoading || !seedPhrase.trim()}
-              >
-                {isLoading ? <CircularProgress size={24} /> : 'Crear/Importar Wallet'}
-              </Button>
-            </Box>
-          </Paper>
-        </Grid>
+        <div className="bg-white rounded-lg shadow-md p-6 h-full">
+          <h2 className="text-lg font-semibold mb-3">Crear o Importar Wallet</h2>
+          <div className="mt-4">
+            <label className="block text-gray-700 mb-2">Frase Semilla</label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-main"
+              placeholder="Ingresa tu frase semilla"
+              value={seedPhrase}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSeedPhrase(e.target.value)}
+              disabled={isLoading}
+            />
+            <button
+              className={`mt-4 w-full py-2 rounded ${
+                isLoading || !seedPhrase.trim() 
+                  ? 'bg-gray-300 cursor-not-allowed' 
+                  : 'bg-primary-main text-white hover:bg-primary-dark'
+              }`}
+              onClick={handleCreateWallet}
+              disabled={isLoading || !seedPhrase.trim()}
+            >
+              {isLoading ? (
+                <div className="inline-block h-5 w-5 animate-spin rounded-full border-b-2 border-white"></div>
+              ) : 'Crear/Importar Wallet'}
+            </button>
+          </div>
+        </div>
 
         {/* Sección de información de la wallet */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Información de la Wallet
-            </Typography>
-            
-            {identity ? (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Dirección
-                </Typography>
-                <Typography 
-                  variant="body1" 
-                  sx={{ 
-                    wordBreak: 'break-all', 
-                    bgcolor: 'action.hover', 
-                    p: 1, 
-                    borderRadius: 1 
-                  }}
-                >
-                  {identity.address}
-                </Typography>
-
-                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Balance
-                    </Typography>
-                    <Typography variant="h5">
-                      {balance} QU
-                    </Typography>
-                  </Box>
-                  <Button 
-                    variant="outlined" 
+        <div className="bg-white rounded-lg shadow-md p-6 h-full">
+          <h2 className="text-lg font-semibold mb-3">Información de la Wallet</h2>
+          
+          {identity ? (
+            <div>
+              <div className="mt-3">
+                <p className="text-sm text-gray-500">Dirección</p>
+                <p className="bg-gray-100 p-2 rounded text-xs break-all mt-1">{identity.address}</p>
+              </div>
+              
+              <div className="mt-4">
+                <p className="text-sm text-gray-500">Balance</p>
+                <div className="flex items-center">
+                  <p className="text-2xl font-bold">{balance} QU</p>
+                  <button 
+                    className="ml-2 text-primary-main hover:text-primary-dark"
                     onClick={refreshBalance}
                     disabled={isLoading}
                   >
-                    Actualizar
-                  </Button>
-                </Box>
-              </Box>
-            ) : (
-              <Alert severity="info">
-                Crea o importa una wallet para ver su información
-              </Alert>
-            )}
-          </Paper>
-        </Grid>
-
-        {/* Sección para transferir QU */}
-        <Grid item xs={12}>
-          <Card elevation={3}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Transferir QU
-              </Typography>
-
-              {identity ? (
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Dirección Destino"
-                      placeholder="Ingresa la dirección de destino"
-                      margin="normal"
+                    {isLoading ? (
+                      <div className="inline-block h-4 w-4 animate-spin rounded-full border-b-2 border-primary-main"></div>
+                    ) : 'Actualizar'}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <h3 className="font-medium mb-3">Transferir QU</h3>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="block text-gray-700 mb-1 text-sm">Dirección Destino</label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-main"
+                      placeholder="Dirección del destinatario"
                       value={targetAddress}
-                      onChange={(e) => setTargetAddress(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTargetAddress(e.target.value)}
                       disabled={isLoading}
                     />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Cantidad de QU"
-                      placeholder="Ingresa la cantidad a transferir"
-                      margin="normal"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      disabled={isLoading}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-gray-700 mb-1 text-sm">Cantidad (QU)</label>
+                    <input
                       type="number"
-                      InputProps={{ inputProps: { min: 1 } }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-main"
+                      placeholder="Cantidad a transferir"
+                      value={amount}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                      disabled={isLoading}
+                      min="1"
                     />
-                  </Grid>
-                </Grid>
-              ) : (
-                <Alert severity="warning">
-                  Necesitas crear o importar una wallet primero
-                </Alert>
-              )}
-            </CardContent>
-            {identity && (
-              <CardActions>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  color="primary"
-                  onClick={handleTransfer}
-                  disabled={isLoading || !targetAddress.trim() || !amount.trim()}
-                >
-                  {isLoading ? <CircularProgress size={24} /> : 'Transferir'}
-                </Button>
-              </CardActions>
-            )}
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Notificación */}
-      <Snackbar 
-        open={notification.open} 
-        autoHideDuration={6000} 
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert 
-          onClose={handleCloseNotification} 
-          severity={notification.severity}
-          sx={{ width: '100%' }}
-        >
-          {notification.message}
-        </Alert>
-      </Snackbar>
-    </Container>
+                  </div>
+                  
+                  <button
+                    className={`mt-2 w-full py-2 rounded ${
+                      isLoading || !targetAddress.trim() || !amount 
+                        ? 'bg-gray-300 cursor-not-allowed' 
+                        : 'bg-primary-main text-white hover:bg-primary-dark'
+                    }`}
+                    onClick={handleTransfer}
+                    disabled={isLoading || !targetAddress.trim() || !amount}
+                  >
+                    {isLoading ? (
+                      <div className="inline-block h-5 w-5 animate-spin rounded-full border-b-2 border-white"></div>
+                    ) : 'Transferir'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-6">
+              <p className="text-gray-500 mb-4">No tienes una wallet activa</p>
+              <p className="text-sm text-gray-400 text-center">
+                Utiliza la sección "Crear o Importar Wallet" para generar una nueva wallet o importar una existente.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
