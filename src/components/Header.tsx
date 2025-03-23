@@ -32,9 +32,9 @@ const Header: React.FC = () => {
             <Link to="/contract" className="text-white hover:text-gray-200 px-2 py-1">
               Contract
             </Link>
-            <Link to="/transactions" className="text-white hover:text-gray-200 px-2 py-1">
+            {/* <Link to="/transactions" className="text-white hover:text-gray-200 px-2 py-1">
               Transactions
-            </Link>
+            </Link> */}
           </nav>
         </div>
       </div>

@@ -11,6 +11,10 @@ interface Transaction {
   timestamp: Date;
   type: 'transfer' | 'contract' | 'burn';
   status: 'confirmed' | 'pending';
+  inputType?: number;
+  inputSize?: number;
+  inputHex?: string;
+  signatureHex?: string;
 }
 
 interface TickInfo {
@@ -63,6 +67,15 @@ const TickDetail: React.FC = () => {
       return `${address.substring(0, 8)}...${address.substring(address.length - 8)}`;
     }
     return address;
+  };
+
+  // Después de formatAddress, añado una función para formatear los ID de transacción
+  const formatTransactionId = (id: string): string => {
+    if (!id || id === "Desconocido") return "Desconocido";
+    if (id.length > 16) {
+      return `${id.substring(0, 6)}...${id.substring(id.length - 6)}`;
+    }
+    return id;
   };
 
   // Formatear fecha
@@ -209,18 +222,23 @@ const TickDetail: React.FC = () => {
                 <table className="min-w-full border border-gray-200 rounded-lg">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="py-2 px-4 text-left">ID</th>
+                      <th className="py-2 px-4 text-left">ID TX</th>
                       <th className="py-2 px-4 text-left">De</th>
                       <th className="py-2 px-4 text-left">A</th>
                       <th className="py-2 px-4 text-right">Cantidad</th>
                       <th className="py-2 px-4 text-center">Tipo</th>
+                      <th className="py-2 px-4 text-center">Input</th>
                       <th className="py-2 px-4 text-center">Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {transactions.map(tx => (
                       <tr key={tx.id} className="hover:bg-gray-50">
-                        <td className="py-3 px-4 font-medium">{tx.id}</td>
+                        <td className="py-3 px-4 font-medium text-xs">
+                          <span title={tx.id} className="cursor-help">
+                            {formatTransactionId(tx.id)}
+                          </span>
+                        </td>
                         <td className="py-3 px-4 text-sm text-gray-600">
                           <Link 
                             to={`/explorer/address/${tx.sourceAddress}`} 
@@ -244,6 +262,28 @@ const TickDetail: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center">
+                          {tx.inputType !== undefined && (
+                            <div className="text-xs">
+                              <span className="font-medium">Tipo: </span>{tx.inputType}
+                              {tx.inputSize !== undefined && tx.inputSize > 0 && (
+                                <span>, <span className="font-medium">Tamaño: </span>{tx.inputSize}</span>
+                              )}
+                              {tx.inputHex && tx.inputHex.length > 0 && (
+                                <div className="mt-1">
+                                  <details className="text-left">
+                                    <summary className="cursor-pointer text-blue-600 hover:text-blue-800">Ver Datos</summary>
+                                    <div className="p-2 mt-1 bg-gray-100 rounded overflow-auto max-h-20 text-xs font-mono">
+                                      {tx.inputHex.length > 50 
+                                        ? `${tx.inputHex.substring(0, 50)}...` 
+                                        : tx.inputHex}
+                                    </div>
+                                  </details>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
                           <span className={`inline-block px-2 py-1 text-xs rounded ${getStatusClass(tx.status)}`}>
                             {formatStatus(tx.status)}
                           </span>
@@ -253,10 +293,38 @@ const TickDetail: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Detalles de Firmas */}
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-4">Firmas de Transacciones</h3>
+                <div className="grid grid-cols-1 gap-4">
+                  {transactions.map(tx => (
+                    <div key={`sig-${tx.id}`} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="flex justify-between mb-2">
+                        <span className="font-medium text-sm">
+                          TX ID: <span title={tx.id} className="cursor-help">{formatTransactionId(tx.id)}</span>
+                        </span>
+                        <span className="text-sm">{formatAddress(tx.sourceAddress)} → {formatAddress(tx.targetAddress)}</span>
+                      </div>
+                      {tx.signatureHex && (
+                        <div className="mt-1">
+                          <h4 className="text-xs font-medium mb-1">Firma:</h4>
+                          <p className="bg-gray-100 p-2 rounded text-xs font-mono overflow-x-auto">
+                            {tx.signatureHex}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8">
-              <p className="text-gray-500">No se encontraron transacciones para este tick.</p>
+              <svg className="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="mt-2 text-gray-500">No hay transacciones registradas para este tick.</p>
             </div>
           )}
         </div>

@@ -754,9 +754,39 @@ class QubicService {
     try {
       console.log(`Obteniendo transacciones del tick ${tickNumber}`);
       
-      // Intentar obtener transacciones a través del endpoint de tick-events
+      // Usar el endpoint directo para ticks
       try {
-        // Primero intentamos con el endpoint de qu-transfers
+        const tickEndpoint = `${this.baseUrl}/v1/ticks/${tickNumber}/transactions`;
+        console.log(`Consultando endpoint de ticks: ${tickEndpoint}`);
+        const tickResponse = await axios.get(tickEndpoint);
+        
+        if (tickResponse.data && Array.isArray(tickResponse.data.transactions) && 
+            tickResponse.data.transactions.length > 0) {
+          
+          console.log(`Encontradas ${tickResponse.data.transactions.length} transacciones en el tick ${tickNumber}`);
+          
+          return tickResponse.data.transactions.map((tx: any) => ({
+            id: tx.txId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            sourceAddress: tx.sourceId || "Desconocido",
+            targetAddress: tx.destId || "Desconocido",
+            amount: tx.amount?.toString() || "0",
+            tick: tickNumber,
+            timestamp: new Date(),
+            inputType: tx.inputType || 0,
+            inputSize: tx.inputSize || 0,
+            inputHex: tx.inputHex || "",
+            signatureHex: tx.signatureHex || "",
+            type: tx.inputType > 0 ? "contract" : "transfer",
+            status: "confirmed"
+          }));
+        }
+      } catch (tickError) {
+        console.warn(`Error al obtener transacciones del tick ${tickNumber}:`, tickError);
+      }
+      
+      // Si llegamos aquí, intentamos con los métodos alternativos
+      try {
+        // Intentamos con el endpoint de qu-transfers
         const quEndpoint = config.api.tickTransfers.replace('{tick}', tickNumber.toString());
         console.log(`Consultando endpoint de QU: ${this.transactionsUrl}${quEndpoint}`);
         const quTransfersResponse = await axios.get(`${this.transactionsUrl}${quEndpoint}`);
@@ -801,31 +831,6 @@ class QubicService {
         }
       } catch (assetTransfersError) {
         console.warn(`Error al obtener transferencias de activos del tick ${tickNumber}:`, assetTransfersError);
-      }
-      
-      // Intentar con endpoint general de tick-info
-      try {
-        const tickInfoResponse = await axios.get(`${this.baseUrl}${config.api.tickInfo}/${tickNumber}`);
-        
-        if (tickInfoResponse.data && tickInfoResponse.data.transactions && 
-            Array.isArray(tickInfoResponse.data.transactions) && 
-            tickInfoResponse.data.transactions.length > 0) {
-          
-          console.log(`Encontradas ${tickInfoResponse.data.transactions.length} transacciones en tick-info para el tick ${tickNumber}`);
-          
-          return tickInfoResponse.data.transactions.map((tx: any) => ({
-            id: tx.id || tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            sourceAddress: tx.sourcePublicId || tx.sourceId || "Desconocido",
-            targetAddress: tx.targetPublicId || tx.targetId || "Desconocido",
-            amount: tx.amount?.toString() || "0",
-            tick: tickNumber,
-            timestamp: new Date(tx.timestamp) || new Date(),
-            type: this.determineTransactionType(tx),
-            status: "confirmed"
-          }));
-        }
-      } catch (tickInfoError) {
-        console.warn(`Error al obtener info del tick ${tickNumber}:`, tickInfoError);
       }
       
       // Si no encontramos transacciones en ninguno de los endpoints, generamos mock data
