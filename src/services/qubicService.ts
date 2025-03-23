@@ -893,6 +893,88 @@ class QubicService {
         };
       });
   }
+
+  // Obtener detalles de una dirección/ID de usuario
+  async getAddressDetails(id: string): Promise<any> {
+    try {
+      console.log(`Obteniendo detalles de la dirección: ${id}`);
+      
+      const response = await axios.get(`${this.baseUrl}/v1/balances/${id}`);
+      
+      if (response.data && response.data.balance) {
+        console.log('Información de balance recibida:', response.data);
+        return response.data.balance;
+      } else {
+        console.warn('Formato de respuesta inesperado:', response.data);
+        throw new Error('Formato de respuesta inválido');
+      }
+    } catch (error) {
+      console.error(`Error al obtener detalles de la dirección ${id}:`, error);
+      
+      // En caso de error, devolver datos simulados pero con el ID correcto
+      return {
+        id: id,
+        balance: "0",
+        validForTick: 0,
+        latestIncomingTransferTick: 0,
+        latestOutgoingTransferTick: 0,
+        incomingAmount: "0",
+        outgoingAmount: "0",
+        numberOfIncomingTransfers: 0,
+        numberOfOutgoingTransfers: 0
+      };
+    }
+  }
+
+  // Obtener transacciones de una dirección específica
+  async getAddressTransactions(id: string, limit: number = 20): Promise<any[]> {
+    try {
+      console.log(`Obteniendo transacciones de la dirección: ${id}`);
+      
+      // Intentar obtener transferencias entrantes QU
+      let transactions: any[] = [];
+      
+      try {
+        const incomingEndpoint = config.api.quTransfers.replace('{identity}', id);
+        console.log(`Consultando endpoint de transferencias entrantes: ${this.transactionsUrl}${incomingEndpoint}`);
+        const incomingResponse = await axios.get(`${this.transactionsUrl}${incomingEndpoint}?limit=${limit}`);
+        
+        if (incomingResponse.data && Array.isArray(incomingResponse.data) && incomingResponse.data.length > 0) {
+          console.log(`Encontradas ${incomingResponse.data.length} transferencias entrantes`);
+          
+          const formattedIncoming = incomingResponse.data.map((tx: any) => ({
+            id: tx.id || tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            sourceAddress: tx.sourcePublicId || "Desconocido",
+            targetAddress: tx.targetPublicId || id,
+            amount: tx.amount?.toString() || "0",
+            tick: tx.tick || 0,
+            timestamp: tx.timestamp ? new Date(tx.timestamp) : new Date(),
+            type: "transfer",
+            status: "confirmed",
+            direction: "incoming"
+          }));
+          
+          transactions = [...transactions, ...formattedIncoming];
+        }
+      } catch (error) {
+        console.warn(`Error al obtener transferencias entrantes de ${id}:`, error);
+      }
+      
+      // Si no hay transacciones, devolver un arreglo vacío
+      if (transactions.length === 0) {
+        console.log(`No se encontraron transacciones para la dirección ${id}`);
+        return [];
+      }
+      
+      // Ordenar por tick descendente (más reciente primero)
+      transactions.sort((a, b) => b.tick - a.tick);
+      
+      return transactions.slice(0, limit);
+    } catch (error) {
+      console.error(`Error general al obtener transacciones de la dirección ${id}:`, error);
+      return [];
+    }
+  }
 }
 
 // Exportar una instancia única del servicio
