@@ -1,317 +1,315 @@
 import React, { useState, useEffect } from "react";
-import { useQubic } from "../context/QubicContext";
 import { qubicService } from "../services/qubicService";
+import { Link } from "react-router-dom";
 
-// Interfaz para transacciones
+// Definir interfaz para las transacciones
 interface Transaction {
   id: string;
   sourceAddress: string;
   targetAddress: string;
   amount: string;
   tick: number;
-  timestamp: Date;
+  timestamp: Date | string;
   type: "transfer" | "contract" | "burn";
   status: "confirmed" | "pending";
 }
 
 const Transactions: React.FC = () => {
-  // Quitamos identity para evitar la advertencia de ESLint
-  // const { identity } = useQubic();
-
-  // Estado local
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<
-    Transaction[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
 
-  // Cargar transacciones al montar o cuando cambia la página/tamaño
+  // Cargar transacciones
   useEffect(() => {
     const fetchTransactions = async () => {
-      setIsLoading(true);
-
+      setLoading(true);
+      setError(null);
+      
       try {
-        // Usar el método del servicio para obtener transacciones
-        const transactionsData = await qubicService.getTransactions(page, rowsPerPage);
-        
-        console.log('Transacciones obtenidas en el componente:', transactionsData);
-        
-        if (Array.isArray(transactionsData) && transactionsData.length > 0) {
-          // Asegurarnos de que los datos son del tipo correcto
-          const formattedTransactions = transactionsData.map(tx => ({
-            id: tx.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            sourceAddress: tx.sourceAddress || "Desconocido",
-            targetAddress: tx.targetAddress || "Desconocido",
-            amount: tx.amount?.toString() || "0",
-            tick: tx.tick || 0,
-            timestamp: tx.timestamp instanceof Date ? tx.timestamp : new Date(),
-            type: (tx.type === "transfer" || tx.type === "contract" || tx.type === "burn") 
-              ? tx.type as "transfer" | "contract" | "burn" 
-              : "transfer",
-            status: tx.status === "pending" ? "pending" : "confirmed" as "confirmed" | "pending"
-          }));
-          
-          setTransactions(formattedTransactions);
-          setFilteredTransactions(formattedTransactions);
-          console.log('Transacciones formateadas:', formattedTransactions);
+        // Obtener transacciones de la API
+        const data = await qubicService.getTransactions(currentPage - 1, itemsPerPage);
+        if (data) {
+          console.log('Transacciones cargadas:', data);
+          setTransactions(data);
         } else {
-          console.warn('No se recibieron transacciones válidas');
-          setTransactions([]);
-          setFilteredTransactions([]);
+          throw new Error('No se recibieron datos de transacciones');
         }
-      } catch (error) {
-        console.error("Error al cargar transacciones:", error);
-        setTransactions([]);
-        setFilteredTransactions([]);
+      } catch (err) {
+        console.error('Error al cargar transacciones:', err);
+        setError('No se pudieron cargar las transacciones. Por favor, inténtalo de nuevo.');
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
     fetchTransactions();
-  }, [page, rowsPerPage]);
+  }, [currentPage, itemsPerPage]);
 
-  // Filtrar transacciones cuando cambia el término de búsqueda
+  // Filtrar transacciones cuando cambia la búsqueda
   useEffect(() => {
-    if (!searchTerm.trim()) {
+    if (!searchQuery.trim()) {
       setFilteredTransactions(transactions);
+      setTotalPages(Math.max(1, Math.ceil(transactions.length / itemsPerPage)));
       return;
     }
 
-    const term = searchTerm.toLowerCase();
-    const filtered = transactions.filter(
-      (tx) =>
-        tx.sourceAddress.toLowerCase().includes(term) ||
-        tx.targetAddress.toLowerCase().includes(term) ||
-        tx.amount.includes(term) ||
-        tx.tick.toString().includes(term)
+    const query = searchQuery.toLowerCase();
+    const filtered = transactions.filter(tx => 
+      tx.id.toLowerCase().includes(query) ||
+      tx.sourceAddress.toLowerCase().includes(query) ||
+      tx.targetAddress.toLowerCase().includes(query) ||
+      tx.amount.toString().includes(query) ||
+      tx.tick.toString().includes(query)
     );
 
     setFilteredTransactions(filtered);
-    setPage(0); // Resetear a la primera página
-  }, [searchTerm, transactions]);
+    setTotalPages(Math.max(1, Math.ceil(filtered.length / itemsPerPage)));
+  }, [searchQuery, transactions, itemsPerPage]);
 
-  // Manejadores
-  const handleChangePage = (newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (perPage: number) => {
-    setRowsPerPage(perPage);
-    setPage(0);
-  };
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const renderTransactionType = (type: string, status: string) => {
-    let bgColor = "";
-    let textColor = "";
-    let icon = null;
-    let label = "";
-
-    if (type === "transfer") {
-      bgColor = "bg-blue-100";
-      textColor = "text-blue-800";
-      label = "Transferencia";
-      icon = (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-        </svg>
-      );
-    } else if (type === "contract") {
-      bgColor = "bg-purple-100";
-      textColor = "text-purple-800";
-      label = "Contrato";
-      icon = (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      );
-    } else if (type === "burn") {
-      bgColor = "bg-red-100";
-      textColor = "text-red-800";
-      label = "Quema";
-      icon = (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-        </svg>
-      );
+  // Formatear dirección (mostrar versión corta)
+  const formatAddress = (address: string): string => {
+    if (!address || address === "Desconocido") return "Desconocido";
+    if (address.length > 16) {
+      return `${address.substring(0, 8)}...${address.substring(address.length - 8)}`;
     }
-
-    const statusColor = status === "confirmed" ? "bg-green-400" : "bg-yellow-400";
-
-    return (
-      <div className={`flex items-center px-2 py-1 rounded-full ${bgColor} ${textColor}`}>
-        {icon}
-        <span className="text-xs">{label}</span>
-        <span className={`ml-1 h-2 w-2 rounded-full ${statusColor}`}></span>
-      </div>
-    );
+    return address;
   };
 
-  const truncateAddress = (address: string, length: number = 10) => {
-    if (!address) return "";
-    return `${address.substring(0, length)}...${address.substring(
-      address.length - length
-    )}`;
+  // Formatear tipo de transacción
+  const formatTransactionType = (type: string): string => {
+    switch (type) {
+      case 'transfer': return 'Transferencia';
+      case 'contract': return 'Contrato';
+      case 'burn': return 'Quema';
+      default: return type;
+    }
   };
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleString();
+  // Obtener clase CSS según tipo de transacción
+  const getTypeClass = (type: string): string => {
+    switch (type) {
+      case 'transfer': return 'bg-blue-100 text-blue-800';
+      case 'contract': return 'bg-purple-100 text-purple-800';
+      case 'burn': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Formatear fecha
+  const formatDate = (date: Date | string): string => {
+    if (date instanceof Date) {
+      return date.toLocaleString();
+    }
+    if (typeof date === 'string') {
+      return new Date(date).toLocaleString();
+    }
+    return 'Fecha desconocida';
+  };
+
+  // Cambiar página
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  // Cambiar items por página
+  const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = parseInt(e.target.value);
+    setItemsPerPage(value);
+    setCurrentPage(1); // Resetear a la primera página
+  };
+
+  // Manejar cambios en la búsqueda
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+    setCurrentPage(1); // Resetear a la primera página
   };
 
   return (
-    <div className="container mx-auto px-4 mt-8 mb-8">
+    <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">Historial de Transacciones</h1>
-
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
-          <div className="relative">
-            <input
-              type="text"
-              className="pl-10 pr-4 py-2 w-full md:w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-main"
-              placeholder="Buscar por dirección, monto o tick..."
-              value={searchTerm}
-              onChange={handleSearch}
+      
+      <div className="bg-white rounded-lg shadow-md p-6">
+        {/* Barra de búsqueda y selección de items por página */}
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+          <div className="w-full sm:w-auto">
+            <input 
+              type="text" 
+                placeholder="Buscar por dirección, monto o tick..."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-light"
+              value={searchQuery}
+              onChange={handleSearchChange}
             />
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
           </div>
-          
-          <div className="flex items-center gap-2">
+          <div className="w-full sm:w-auto flex justify-end">
             <select 
-              className="py-2 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-main"
-              value={rowsPerPage}
-              onChange={(e) => handleChangeRowsPerPage(parseInt(e.target.value, 10))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-light"
+              value={itemsPerPage}
+              onChange={handleItemsPerPageChange}
             >
-              <option value={5}>5 por página</option>
               <option value={10}>10 por página</option>
-              <option value={25}>25 por página</option>
+              <option value={20}>20 por página</option>
               <option value={50}>50 por página</option>
             </select>
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="flex justify-center my-12">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-b-2 border-primary-main"></div>
+        {/* Tabla de transacciones */}
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-main"></div>
+            <p className="mt-2 text-gray-500">Cargando transacciones...</p>
           </div>
-        ) : filteredTransactions.length > 0 ? (
-          <>
+        ) : error ? (
+          <div className="text-center py-8">
+            <div className="text-red-500 mb-2">
+              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-red-500">{error}</p>
+          </div>
+            ) : filteredTransactions.length > 0 ? (
+          <div>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full">
+                <thead className="bg-gray-100">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tipo
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Origen
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Destino
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Monto
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tick
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Fecha
-                    </th>
+                    <th className="py-3 px-4 text-left">TIPO</th>
+                    <th className="py-3 px-4 text-left">ORIGEN</th>
+                    <th className="py-3 px-4 text-left">DESTINO</th>
+                    <th className="py-3 px-4 text-right">MONTO</th>
+                    <th className="py-3 px-4 text-center">TICK</th>
+                    <th className="py-3 px-4 text-right">FECHA</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredTransactions
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((tx) => (
-                      <tr key={tx.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {renderTransactionType(tx.type, tx.status)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-900">
-                            {truncateAddress(tx.sourceAddress)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-900">
-                            {truncateAddress(tx.targetAddress)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium">
-                            {tx.amount} QU
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-500">
-                            {tx.tick}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-500">
-                            {formatDate(tx.timestamp)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                <tbody className="divide-y divide-gray-200">
+                  {filteredTransactions.map(tx => (
+                    <tr key={tx.id} className="hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeClass(tx.type)}`}>
+                          {tx.type === 'transfer' && (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                            </svg>
+                          )}
+                          {tx.type === 'contract' && (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                            </svg>
+                          )}
+                          {tx.type === 'burn' && (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+                            </svg>
+                          )}
+                          {formatTransactionType(tx.type)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        <Link 
+                          to={`/explorer/address/${tx.sourceAddress}`} 
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {formatAddress(tx.sourceAddress)}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        <Link 
+                          to={`/explorer/address/${tx.targetAddress}`} 
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {formatAddress(tx.targetAddress)}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 text-right font-medium">{tx.amount} QU</td>
+                      <td className="py-3 px-4 text-center">
+                        <Link 
+                          to={`/explorer/tick/${tx.tick}`}
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {tx.tick}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 text-right text-sm text-gray-600">
+                        {formatDate(tx.timestamp)}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-
-            <div className="flex justify-between items-center mt-6">
+            
+            {/* Paginación */}
+            <div className="mt-6 flex justify-between items-center">
               <div className="text-sm text-gray-500">
-                Mostrando {Math.min(filteredTransactions.length, page * rowsPerPage + 1)} - {Math.min(filteredTransactions.length, (page + 1) * rowsPerPage)} de {filteredTransactions.length} transacciones
+                Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredTransactions.length)} de {filteredTransactions.length} transacciones
               </div>
-              <div className="flex items-center gap-1">
+              
+              <div className="flex space-x-1">
                 <button
-                  className={`px-3 py-1 rounded ${page > 0 ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
-                  onClick={() => page > 0 && handleChangePage(page - 1)}
-                  disabled={page === 0}
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-1 rounded ${currentPage === 1 ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                 >
                   Anterior
                 </button>
-                {Array.from({ length: Math.ceil(filteredTransactions.length / rowsPerPage) }, (_, i) => (
-                  <button
-                    key={i}
-                    className={`w-8 h-8 rounded-full ${page === i ? 'bg-primary-main text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
-                    onClick={() => handleChangePage(i)}
-                  >
-                    {i + 1}
-                  </button>
-                )).slice(Math.max(0, page - 2), Math.min(Math.ceil(filteredTransactions.length / rowsPerPage), page + 3))}
+                
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`px-3 py-1 rounded ${currentPage === pageNum ? 'bg-primary-main text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
                 <button
-                  className={`px-3 py-1 rounded ${page < Math.ceil(filteredTransactions.length / rowsPerPage) - 1 ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
-                  onClick={() => page < Math.ceil(filteredTransactions.length / rowsPerPage) - 1 && handleChangePage(page + 1)}
-                  disabled={page >= Math.ceil(filteredTransactions.length / rowsPerPage) - 1}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-1 rounded ${currentPage === totalPages ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                 >
                   Siguiente
                 </button>
               </div>
             </div>
-          </>
+          </div>
         ) : (
-          <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-            <p className="text-gray-500">No se encontraron transacciones</p>
-            {searchTerm && (
-              <p className="text-sm text-gray-400 mt-2">
-                Prueba con otro término de búsqueda
-              </p>
-            )}
+          <div className="text-center py-8">
+            <div className="text-gray-500 mb-4">No se encontraron transacciones en los ticks consultados.</div>
+            <p className="text-sm text-gray-400">
+              El explorador consulta los ticks más recientes de la red Qubic. Si no hay transacciones, puede ser por las siguientes razones:
+            </p>
+            <ul className="text-sm text-gray-400 mt-2 list-disc list-inside">
+              <li>No hay transacciones en los ticks más recientes</li>
+              <li>Problema de conectividad con el API de transacciones</li>
+              <li>La red está experimentando baja actividad en este momento</li>
+            </ul>
+            <button 
+              onClick={() => setCurrentPage(1)} 
+              className="mt-4 px-4 py-2 bg-primary-main text-white rounded hover:bg-primary-dark"
+            >
+              Actualizar
+            </button>
           </div>
         )}
       </div>

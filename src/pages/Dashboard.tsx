@@ -247,7 +247,7 @@ const Dashboard: React.FC = () => {
                 className="text-primary-main hover:text-primary-dark"
                 title="Actualizar"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-5 h-5" fill="none" stroke="white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
@@ -266,7 +266,6 @@ const Dashboard: React.FC = () => {
                       <tr>
                         <th className="py-2 px-4 text-left">Tick</th>
                         <th className="py-2 px-4 text-left">Timestamp</th>
-                        <th className="py-2 px-4 text-left">Computador</th>
                         <th className="py-2 px-4 text-center">Acciones</th>
                       </tr>
                     </thead>
@@ -276,18 +275,6 @@ const Dashboard: React.FC = () => {
                           <td className="py-3 px-4 font-medium">#{item.tick}</td>
                           <td className="py-3 px-4 text-sm text-gray-600">
                             {formatDate(item.timestamp)}
-                          </td>
-                          <td className="py-3 px-4">
-                            {item.computerId ? (
-                              <Link 
-                                to={`/explorer/computor/${item.computerId}`} 
-                                className="text-blue-600 hover:text-blue-800 hover:underline"
-                              >
-                                {formatComputerId(item.computerId)}
-                              </Link>
-                            ) : (
-                              <span className="text-gray-500">desconocido</span>
-                            )}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <Link 

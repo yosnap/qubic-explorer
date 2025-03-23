@@ -43,6 +43,9 @@ function uint8ArrayToHexString(array: Uint8Array): string {
 class QubicService {
   // URL base para las solicitudes a la API
   private baseUrl: string;
+  
+  // URL base para transacciones
+  private transactionsUrl: string;
 
   // Caché de la última solicitud de estadísticas
   private lastStatsRequest: {
@@ -52,6 +55,7 @@ class QubicService {
 
   constructor() {
     this.baseUrl = config.nodeUrl;
+    this.transactionsUrl = config.transactionsUrl;
   }
 
   // Obtener el tick actual de la red
@@ -230,80 +234,114 @@ class QubicService {
     try {
       console.log(`Consultando transacciones de la mainnet, página ${page}, límite ${limit}`);
       
-      // Obtener status que incluye el tick actual
-      const statusResponse = await axios.get(`${this.baseUrl}${config.api.getStatus}`);
-      console.log('Respuesta de status:', statusResponse.data);
+      // Obtener el tick actual y estadísticas de la red
+      const stats = await this.getNetworkStats();
+      const currentTick = stats.currentTick;
+      console.log('Tick actual para transacciones:', currentTick);
       
-      if (!statusResponse.data || !statusResponse.data.tick) {
-        throw new Error('No se pudo obtener el tick actual');
+      // Recopilamos transacciones de diferentes endpoints
+      let allTransactions: any[] = [];
+      
+      // Intentamos obtener transacciones de ticks reales recientes
+      console.log('Buscando transacciones en ticks recientes');
+      
+      // Calcular tick inicial y final para la paginación
+      // Start desde el tick actual retrocediendo según la página y el límite
+      const startTick = Math.max(1, currentTick - (page * limit) - limit + 1);
+      const endTick = Math.max(1, currentTick - (page * limit));
+      
+      console.log(`Consultando ticks en el rango: ${startTick} a ${endTick}`);
+      
+      // Crear un array de ticks a consultar
+      const ticks = [];
+      for (let tick = endTick; tick >= startTick; tick--) {
+        ticks.push(tick);
       }
       
-      const currentTick = statusResponse.data.tick;
-      console.log('Tick actual:', currentTick);
-      
-      // Para paginación, retroceder desde el tick actual
-      const tickToFetch = Math.max(1, currentTick - page);
-      console.log(`Consultando tick ${tickToFetch}`);
-      
-      try {
-        // Intentar obtener transacciones de este tick específico
-        const txResponse = await axios.get(`${this.baseUrl}${config.api.transactions}/${tickToFetch}`);
-        console.log('Respuesta de transacciones:', txResponse.data);
+      const tickPromises = ticks.map(async (tick) => {
+        const transactions: any[] = [];
         
-        if (txResponse.data && Array.isArray(txResponse.data) && txResponse.data.length > 0) {
-          // Mapear las transacciones recibidas al formato que espera nuestra aplicación
-          return txResponse.data.map((tx: any) => ({
-            id: tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            sourceAddress: tx.sourcePublicKey || "Desconocido",
-            targetAddress: tx.targetPublicKey || "Desconocido",
-            amount: tx.amount?.toString() || "0",
-            tick: tickToFetch,
-            timestamp: new Date(),
-            type: this.determineTransactionType(tx),
-            status: "confirmed"
-          })).slice(0, limit);
-        }
-      } catch (txError) {
-        console.warn('Error al obtener transacciones específicas:', txError);
-        // Continuamos con el siguiente enfoque
-      }
-      
-      // Si no obtuvimos transacciones del tick específico, intentamos obtener información del tick
-      try {
-        const tickInfoResponse = await axios.get(`${this.baseUrl}${config.api.tickInfo}/${tickToFetch}`);
-        console.log('Respuesta de tick-info:', tickInfoResponse.data);
-        
-        if (tickInfoResponse.data && tickInfoResponse.data.transactions && 
-            Array.isArray(tickInfoResponse.data.transactions) && 
-            tickInfoResponse.data.transactions.length > 0) {
+        try {
+          // Intentar obtener transferencias QU del tick
+          const quEndpoint = config.api.tickTransfers.replace('{tick}', tick.toString());
+          console.log(`Consultando endpoint de QU: ${this.transactionsUrl}${quEndpoint}`);
+          const quResponse = await axios.get(`${this.transactionsUrl}${quEndpoint}`);
           
-          // Mapear las transacciones recibidas al formato que espera nuestra aplicación
-          return tickInfoResponse.data.transactions.map((tx: any) => ({
-            id: tx.id || tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            sourceAddress: tx.sourcePublicKey || tx.sourceId || "Desconocido",
-            targetAddress: tx.targetPublicKey || tx.targetId || "Desconocido",
-            amount: tx.amount?.toString() || "0",
-            tick: tickToFetch,
-            timestamp: new Date(),
-            type: this.determineTransactionType(tx),
-            status: "confirmed"
-          })).slice(0, limit);
+          if (quResponse.data && Array.isArray(quResponse.data) && quResponse.data.length > 0) {
+            console.log(`Encontradas ${quResponse.data.length} transferencias QU en tick ${tick}`);
+            const quTxs = quResponse.data.map((tx: any) => ({
+              id: tx.id || tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+              sourceAddress: tx.sourcePublicId || tx.source || "Desconocido",
+              targetAddress: tx.targetPublicId || tx.target || "Desconocido",
+              amount: tx.amount?.toString() || "0",
+              tick: tick,
+              timestamp: tx.timestamp ? new Date(tx.timestamp) : new Date(),
+              type: "transfer",
+              status: "confirmed"
+            }));
+            transactions.push(...quTxs);
+          }
+        } catch (err) {
+          console.warn(`Error al obtener transferencias QU para tick ${tick}:`, err);
         }
-      } catch (tickInfoError) {
-        console.warn('Error al obtener tick-info:', tickInfoError);
-        // Continuamos con datos simulados
+        
+        try {
+          // Intentar obtener transferencias de activos del tick
+          const assetEndpoint = config.api.tickAssetTransfers.replace('{tick}', tick.toString());
+          console.log(`Consultando endpoint de activos: ${this.transactionsUrl}${assetEndpoint}`);
+          const assetResponse = await axios.get(`${this.transactionsUrl}${assetEndpoint}`);
+          
+          if (assetResponse.data && Array.isArray(assetResponse.data) && assetResponse.data.length > 0) {
+            console.log(`Encontradas ${assetResponse.data.length} transferencias de activos en tick ${tick}`);
+            const assetTxs = assetResponse.data.map((tx: any) => ({
+              id: tx.id || tx.transactionId || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+              sourceAddress: tx.sourcePublicId || tx.source || "Desconocido",
+              targetAddress: tx.targetPublicId || tx.target || "Desconocido",
+              amount: tx.amount?.toString() || "1",
+              tick: tick,
+              timestamp: tx.timestamp ? new Date(tx.timestamp) : new Date(),
+              type: "contract",
+              status: "confirmed"
+            }));
+            transactions.push(...assetTxs);
+          }
+        } catch (err) {
+          console.warn(`Error al obtener transferencias de activos para tick ${tick}:`, err);
+        }
+        
+        // Verificación adicional para evitar duplicados
+        return transactions;
+      });
+      
+      // Resolver todas las promesas
+      const tickResults = await Promise.allSettled(tickPromises);
+      const tickTransactions = tickResults
+        .filter((result): result is PromiseFulfilledResult<any[]> => result.status === 'fulfilled')
+        .flatMap(result => result.value);
+      
+      console.log(`Se encontraron ${tickTransactions.length} transacciones en los ticks consultados`);
+      allTransactions = [...allTransactions, ...tickTransactions];
+      
+      // Si no hay transacciones disponibles, mostrar un mensaje claro
+      if (allTransactions.length === 0) {
+        console.log('No se encontraron transacciones reales en los ticks consultados');
+        // En este caso podemos optar por no mostrar datos simulados
+        // y mejor informar al usuario que no hay transacciones disponibles
+        return [];
       }
       
-      // Si llegamos aquí, no obtuvimos transacciones reales, usamos simuladas
-      console.log('Usando transacciones simuladas');
-      return this.generateMockTransactions(limit);
+      // Ordenar por tick descendente (más reciente primero)
+      allTransactions.sort((a, b) => b.tick - a.tick);
       
+      // Limitar al número solicitado
+      const paginatedTransactions = allTransactions.slice(0, limit);
+      console.log(`Devolviendo ${paginatedTransactions.length} transacciones de un total de ${allTransactions.length}`);
+      return paginatedTransactions;
     } catch (error) {
-      console.error('Error al consultar transacciones de la mainnet:', error);
-      
-      // En caso de error, devolver datos simulados para desarrollo
-      console.log('Usando transacciones simuladas debido a error');
-      return this.generateMockTransactions(limit);
+      console.error('Error general al consultar transacciones:', error);
+      // En caso de error, mejor devolver un array vacío 
+      // en lugar de datos simulados para evitar confusiones
+      return [];
     }
   }
   
@@ -633,22 +671,26 @@ class QubicService {
     try {
       console.log('Obteniendo detalles de ticks recientes');
       
-      // Intentar obtener información de ticks desde el endpoint de tick-info
-      const currentTick = await this.getCurrentTick();
-      const tickInfoMap: Record<number, { computerId: string, timestamp: number }> = {};
-
-      // Si no se proporcionan argumentos, usar valores por defecto
+      // Obtener estadísticas actuales de la red para tener el tick más reciente
+      const stats = await this.getNetworkStats();
+      const currentTick = stats.currentTick;
+      
+      // Si no se proporcionan argumentos, usar valores por defecto basados en el tick actual real
       const actualEndTick = endTick || currentTick;
       const ticksToFetch = startTick ? (actualEndTick - startTick + 1) : 50;
       const actualStartTick = startTick || Math.max(1, actualEndTick - ticksToFetch + 1);
       
       console.log(`Consultando ticks en el rango: ${actualStartTick} - ${actualEndTick}`);
-
+      
+      // Objeto para almacenar información de ticks
+      const tickInfoMap: Record<number, { computerId: string, timestamp: number }> = {};
+      
+      // Crear array de promesas para obtener información de cada tick
       const fetchPromises = [];
-
+      
       for (let tick = actualEndTick; tick >= actualStartTick; tick--) {
         if (tick <= 0) continue;
-
+        
         fetchPromises.push(
           this.fetchTickInfo(tick)
             .then(info => {
@@ -664,9 +706,13 @@ class QubicService {
             })
         );
       }
-
+      
       // Esperar a que todas las solicitudes se completen
       await Promise.allSettled(fetchPromises);
+      
+      // Log para depuración
+      const tickCount = Object.keys(tickInfoMap).length;
+      console.log(`Se encontró información para ${tickCount} ticks de los ${ticksToFetch} consultados`);
       
       return tickInfoMap;
     } catch (error) {
@@ -678,7 +724,7 @@ class QubicService {
   // Método auxiliar para obtener información de un tick específico
   private async fetchTickInfo(tick: number): Promise<{ computerId: string, timestamp: number } | null> {
     try {
-      const response = await axios.get(`${this.baseUrl}${config.api.tickInfo}/${tick}`);
+      const response = await axios.get(`${this.baseUrl}${config.api.tickInfo}/${tick}/transactions`);
       
       if (response.data && response.data.computorPublicId) {
         return {
@@ -711,7 +757,9 @@ class QubicService {
       // Intentar obtener transacciones a través del endpoint de tick-events
       try {
         // Primero intentamos con el endpoint de qu-transfers
-        const quTransfersResponse = await axios.get(`${this.baseUrl}/api/v1/ticks/${tickNumber}/events/qu-transfers`);
+        const quEndpoint = config.api.tickTransfers.replace('{tick}', tickNumber.toString());
+        console.log(`Consultando endpoint de QU: ${this.transactionsUrl}${quEndpoint}`);
+        const quTransfersResponse = await axios.get(`${this.transactionsUrl}${quEndpoint}`);
         
         if (quTransfersResponse.data && Array.isArray(quTransfersResponse.data) && quTransfersResponse.data.length > 0) {
           console.log(`Encontradas ${quTransfersResponse.data.length} transferencias QU en el tick ${tickNumber}`);
@@ -733,7 +781,9 @@ class QubicService {
       
       // Intentar con el endpoint de asset-transfers
       try {
-        const assetTransfersResponse = await axios.get(`${this.baseUrl}/api/v1/ticks/${tickNumber}/events/asset-transfers`);
+        const assetEndpoint = config.api.tickAssetTransfers.replace('{tick}', tickNumber.toString());
+        console.log(`Consultando endpoint de activos: ${this.transactionsUrl}${assetEndpoint}`);
+        const assetTransfersResponse = await axios.get(`${this.transactionsUrl}${assetEndpoint}`);
         
         if (assetTransfersResponse.data && Array.isArray(assetTransfersResponse.data) && assetTransfersResponse.data.length > 0) {
           console.log(`Encontradas ${assetTransfersResponse.data.length} transferencias de activos en el tick ${tickNumber}`);
