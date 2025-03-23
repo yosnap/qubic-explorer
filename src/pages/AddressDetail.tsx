@@ -54,6 +54,16 @@ const AddressDetail: React.FC = () => {
     amount: string;
     timestamp: string;
   } | null>(null);
+  // Estados para el modal de configuración de notificaciones
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationEmail, setNotificationEmail] = useState("");
+  const [telegramUsername, setTelegramUsername] = useState("");
+  const [enableChromeNotifications, setEnableChromeNotifications] = useState(true);
+  const [notificationConfig, setNotificationConfig] = useState<{
+    email: string;
+    telegram: string;
+    chrome: boolean;
+  } | null>(null);
   
   // Formatear un número grande
   const formatNumber = (num: string): string => {
@@ -93,19 +103,59 @@ const AddressDetail: React.FC = () => {
     return address;
   };
 
-  // Solicitar permiso para notificaciones
+  // Verificar permisos de notificaciones al cargar la página
+  useEffect(() => {
+    const checkNotificationPermission = async () => {
+      if ('Notification' in window) {
+        // Verificar el permiso actual
+        if (Notification.permission === 'granted') {
+          setPermissionGranted(true);
+        } else if (Notification.permission !== 'denied') {
+          // Si no está denegado, solicitamos el permiso proactivamente
+          try {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              setPermissionGranted(true);
+              // Mostrar una notificación de prueba
+              const notification = new Notification('Notificaciones activadas', {
+                body: 'Recibirás notificaciones cuando haya cambios en las direcciones que sigas.',
+                icon: '/logo.png'
+              });
+              // Cerrar automáticamente después de 5 segundos
+              setTimeout(() => notification.close(), 5000);
+            }
+          } catch (error) {
+            console.error('Error al solicitar permiso para notificaciones:', error);
+          }
+        }
+      }
+    };
+
+    checkNotificationPermission();
+  }, []);
+
+  // Solicitar permiso para notificaciones (función actualizada)
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        setPermissionGranted(true);
-        return true;
-      } else {
-        alert('Para recibir notificaciones, debes permitir el acceso a las notificaciones en tu navegador.');
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setPermissionGranted(true);
+          return true;
+        } else {
+          setError('Para recibir notificaciones, debes permitir el acceso a las notificaciones en tu navegador.');
+          setTimeout(() => setError(null), 5000);
+          return false;
+        }
+      } catch (error) {
+        console.error('Error al solicitar permiso para notificaciones:', error);
+        setError('Error al solicitar permiso para notificaciones. Intenta activarlas manualmente en la configuración de tu navegador.');
+        setTimeout(() => setError(null), 5000);
         return false;
       }
     } else {
-      alert('Tu navegador no soporta notificaciones.');
+      setError('Tu navegador no soporta notificaciones.');
+      setTimeout(() => setError(null), 5000);
       return false;
     }
   };
@@ -275,7 +325,7 @@ const AddressDetail: React.FC = () => {
 
   // Inicializar conexión Socket.IO
   const initializeSocket = useCallback(() => {
-    if (!addressId || socketRef.current) return;
+    if (!addressId || socketRef.current) return null;
     
     console.log(`Iniciando conexión Socket.IO con ${NOTIFICATION_SERVICE_URL}`);
     
@@ -288,9 +338,12 @@ const AddressDetail: React.FC = () => {
       console.log('Conectado al servicio de notificaciones con ID:', socket.id);
       
       // Registrar seguimiento de la dirección
-      if (addressId) {
-        console.log(`Emitiendo evento trackAddress para: ${addressId}`);
-        socket.emit('trackAddress', addressId);
+      if (addressId && notificationConfig) {
+        console.log(`Emitiendo evento trackAddress para: ${addressId} con configuración:`, notificationConfig);
+        socket.emit('trackAddress', {
+          addressId,
+          notificationConfig
+        });
       }
     });
     
@@ -311,7 +364,8 @@ const AddressDetail: React.FC = () => {
       // Si el servidor no puede seguir la dirección, mostramos un mensaje pero mantenemos
       // el seguimiento activo localmente para que al menos reciba notificaciones cuando
       // esté en la aplicación
-      alert(`Error en el servidor: ${data.error}. El seguimiento funcionará solo mientras estés en la aplicación.`);
+      setError(`Error en el servidor: ${data.error}. El seguimiento funcionará solo mientras estés en la aplicación.`);
+      setTimeout(() => setError(null), 5000);
     });
     
     // Manejar eventos de untracking
@@ -389,7 +443,7 @@ const AddressDetail: React.FC = () => {
     });
     
     return socket;
-  }, [addressId, setTracking, setTrackingLoading, setAddressDetails, setTransactions, showTransactionNotification, saveTrackingState]);
+  }, [addressId, notificationConfig, setTracking, setTrackingLoading, setAddressDetails, setTransactions, showTransactionNotification, saveTrackingState, setError]);
   
   // Función para activar/desactivar seguimiento
   const toggleTracking = async () => {
@@ -416,39 +470,88 @@ const AddressDetail: React.FC = () => {
           socketRef.current.emit('untrackAddress', addressId);
         }
       } else {
-        // Iniciar seguimiento
-        console.log(`Activando seguimiento para dirección: ${addressId}`);
-        
-        // Pedir permisos si es necesario
-        if (!permissionGranted) {
-          const granted = await requestNotificationPermission();
-          if (!granted) {
-            setTrackingLoading(false);
-            return;
-          }
-        }
-        
-        // Actualizar la UI inmediatamente
-        setTracking(true);
-        
-        // Guardar en localStorage
-        saveTrackingState(addressId, true);
-        
-        // Iniciar conexión al servicio si no existe
-        if (!socketRef.current) {
-          initializeSocket();
-        } else {
-          // Si ya existe la conexión, enviar evento de seguimiento
-          socketRef.current.emit('trackAddress', addressId);
-        }
+        // Iniciar seguimiento mostrando el modal de configuración
+        setTrackingLoading(false);
+        setShowNotificationModal(true);
       }
     } catch (error) {
       console.error("Error al cambiar estado de seguimiento:", error);
-    } finally {
       setTrackingLoading(false);
     }
   };
   
+  // Función para confirmar la configuración de notificaciones
+  const confirmNotificationSettings = async () => {
+    setTrackingLoading(true);
+    
+    try {
+      // Verificar si se ha ingresado al menos un método de contacto
+      if (!notificationEmail && !telegramUsername && !enableChromeNotifications) {
+        setError("Debes seleccionar al menos un método de notificación");
+        setTimeout(() => setError(null), 5000);
+        setTrackingLoading(false);
+        return;
+      }
+      
+      // Validar formato de email si se proporcionó
+      if (notificationEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notificationEmail)) {
+        setError("Por favor, ingresa un correo electrónico válido");
+        setTimeout(() => setError(null), 5000);
+        setTrackingLoading(false);
+        return;
+      }
+
+      // Si se seleccionó notificaciones de Chrome, solicitar permiso
+      if (enableChromeNotifications && !permissionGranted) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          setTrackingLoading(false);
+          return;
+        }
+      }
+      
+      // Guardar la configuración
+      const config = {
+        email: notificationEmail,
+        telegram: telegramUsername,
+        chrome: enableChromeNotifications
+      };
+      
+      setNotificationConfig(config);
+      
+      // Cerrar el modal
+      setShowNotificationModal(false);
+      
+      // Actualizar la UI
+      setTracking(true);
+      
+      // Guardar en localStorage
+      saveTrackingState(addressId!, true);
+      
+      // Establecer conexión con el servidor
+      if (!socketRef.current) {
+        const socket = initializeSocket();
+        if (socket && addressId) {
+          // Enviar la configuración de notificaciones junto con la dirección
+          socket.emit('trackAddress', {
+            addressId,
+            notificationConfig: config
+          });
+        }
+      } else if (socketRef.current && addressId) {
+        // Ya existe conexión, enviar la configuración
+        socketRef.current.emit('trackAddress', {
+          addressId,
+          notificationConfig: config
+        });
+      }
+    } catch (error) {
+      console.error("Error al configurar notificaciones:", error);
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
+
   // Cargar datos iniciales y verificar el seguimiento
   useEffect(() => {
     const fetchAddressDetails = async () => {
@@ -495,30 +598,36 @@ const AddressDetail: React.FC = () => {
     }
   }, [tracking, permissionGranted, addressId, initializeSocket]);
 
-  // Comprobar el estado de los permisos de notificación al cargar
+  // Cargar notificaciones guardadas
   useEffect(() => {
-    // Comprobar si el navegador soporta notificaciones
-    if ('Notification' in window) {
-      if (Notification.permission === 'granted') {
-        setPermissionGranted(true);
-      } else if (Notification.permission !== 'denied') {
-        // Si el permiso no está denegado ni concedido, solicitarlo automáticamente
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            setPermissionGranted(true);
-            // Mostrar una notificación de prueba para confirmar que funciona
-            const notification = new Notification('Notificaciones activadas', {
-              body: 'Recibirás notificaciones cuando haya cambios en las direcciones que sigues.',
-              icon: '/icons/app-icon.png'
-            });
-            
-            // Cerrar automáticamente después de 5 segundos
-            setTimeout(() => notification.close(), 5000);
-          }
-        });
+    const loadNotificationConfig = () => {
+      try {
+        const configJson = localStorage.getItem('qubic_notification_config');
+        if (configJson) {
+          const config = JSON.parse(configJson);
+          setNotificationEmail(config.email || "");
+          setTelegramUsername(config.telegram || "");
+          setEnableChromeNotifications(config.chrome !== undefined ? config.chrome : true);
+          setNotificationConfig(config);
+        }
+      } catch (error) {
+        console.error("Error al cargar configuración de notificaciones:", error);
+      }
+    };
+    
+    loadNotificationConfig();
+  }, []);
+
+  // Guardar configuración cuando cambie
+  useEffect(() => {
+    if (notificationConfig) {
+      try {
+        localStorage.setItem('qubic_notification_config', JSON.stringify(notificationConfig));
+      } catch (error) {
+        console.error("Error al guardar configuración de notificaciones:", error);
       }
     }
-  }, []);
+  }, [notificationConfig]);
 
   // Limpiar conexiones al desmontar
   useEffect(() => {
@@ -533,6 +642,88 @@ const AddressDetail: React.FC = () => {
   // Renderizado de la página
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Modal de configuración de notificaciones */}
+      {showNotificationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
+            <button 
+              onClick={() => setShowNotificationModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-bold mb-4">Configurar Notificaciones</h2>
+            
+            <p className="text-gray-600 mb-6">
+              Configura cómo deseas recibir notificaciones cuando haya cambios en esta dirección.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Correo Electrónico
+                </label>
+                <input
+                  type="email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="ejemplo@correo.com"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Usuario de Telegram (sin @)
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="usuario_telegram"
+                  value={telegramUsername}
+                  onChange={(e) => setTelegramUsername(e.target.value)}
+                />
+              </div>
+              
+              <div className="flex items-center">
+                <input
+                  id="chrome-notifications"
+                  type="checkbox"
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  checked={enableChromeNotifications}
+                  onChange={(e) => setEnableChromeNotifications(e.target.checked)}
+                />
+                <label htmlFor="chrome-notifications" className="ml-2 block text-sm text-gray-700">
+                  Recibir notificaciones en el navegador
+                </label>
+              </div>
+              
+              <div className="text-sm text-gray-500 italic">
+                Debes seleccionar al menos un método de notificación.
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowNotificationModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmNotificationSettings}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Mensaje de error de conexión */}
       {error && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md">
