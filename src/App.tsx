@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Wallet from './pages/Wallet';
 import Contract from './pages/Contract';
 import Transactions from './pages/Transactions';
+import TickDetail from './pages/TickDetail';
+import ComputorDetail from './pages/ComputorDetail';
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
               <Route path="/wallet" element={<Wallet />} />
               <Route path="/contract" element={<Contract />} />
               <Route path="/transactions" element={<Transactions />} />
+              <Route path="/explorer/tick/:tickId" element={<TickDetail />} />
+              <Route path="/explorer/computor/:computorId" element={<ComputorDetail />} />
             </Routes>
           </main>
         </div>

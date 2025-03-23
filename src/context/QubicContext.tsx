@@ -17,6 +17,13 @@ interface NetworkStats {
   averageTickTime?: number; // Calculado localmente
 }
 
+// Actualizar la interfaz para incluir información del computador
+interface TickHistoryItem {
+  tick: number;
+  timestamp: number;
+  computerId?: string; // Dirección del computador que registró el tick
+}
+
 // Interfaz para el estado del contexto
 interface QubicContextState {
   currentTick: number;
@@ -24,9 +31,10 @@ interface QubicContextState {
   balance: string;
   contractStats: ContractStats | null;
   networkStats: NetworkStats | null;
-  tickHistory: { tick: number; timestamp: number }[];
+  tickHistory: TickHistoryItem[];
   isLoading: boolean;
   error: string | null;
+  lastRefresh: number; // Timestamp del último refresco
 }
 
 // Interfaz para las acciones del contexto
@@ -62,8 +70,24 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
     networkStats: null,
     tickHistory: [],
     isLoading: false,
-    error: null
+    error: null,
+    lastRefresh: Date.now()
   });
+
+  // Efecto para recarga manual cada 10 segundos
+  useEffect(() => {
+    const reloadData = () => {
+      console.log("Recargando datos automáticamente cada 10 segundos");
+      refreshNetworkStats();
+      setState(prev => ({ ...prev, lastRefresh: Date.now() }));
+    };
+    
+    // Configurar intervalo para recarga automática cada 10 segundos
+    const autoReloadInterval = setInterval(reloadData, 10000);
+    
+    // Limpiar intervalo al desmontar
+    return () => clearInterval(autoReloadInterval);
+  }, []);
 
   // Efecto para actualizar las estadísticas de red periódicamente
   useEffect(() => {
@@ -72,25 +96,67 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
         // Obtener estadísticas de red completas
         const networkStats = await qubicService.getNetworkStats();
         
+        // Obtener información adicional sobre los ticks
+        const tickDetails = await qubicService.getTickDetails();
+        
         // Actualizar estado
         setState(prev => {
           // Actualizar historial de ticks si el tick ha cambiado
           let newTickHistory = [...prev.tickHistory];
-          if (networkStats.currentTick !== prev.currentTick) {
+          
+          // Solo agregar un nuevo tick si es diferente al último registrado
+          const lastTickInHistory = newTickHistory[0]?.tick;
+          if (!lastTickInHistory || networkStats.currentTick !== lastTickInHistory) {
+            // Buscar información del computador para este tick
+            const computerId = tickDetails[networkStats.currentTick]?.computerId || "desconocido";
+            
             newTickHistory = [
-              { tick: networkStats.currentTick, timestamp: Date.now() },
+              { 
+                tick: networkStats.currentTick, 
+                timestamp: Date.now(),
+                computerId 
+              },
               ...prev.tickHistory
-            ].slice(0, 10); // Mantener los últimos 10 ticks
+            ].slice(0, 50); // Aumentar a los últimos 50 ticks para tener más datos históricos
+            
+            // Ordenar por número de tick descendente (asegurarnos de que estén en orden)
+            newTickHistory.sort((a, b) => b.tick - a.tick);
+            
+            // Eliminar duplicados por si acaso
+            newTickHistory = newTickHistory.filter(
+              (item, index, self) => index === self.findIndex(t => t.tick === item.tick)
+            );
           }
           
           // Calcular tiempo promedio entre ticks
           let averageTickTime = 0;
           if (newTickHistory.length > 1) {
             const times = [];
+            const tickDiffs = [];
+            
+            // Calcular diferencias de tiempo y de tick para mejor precisión
             for (let i = 0; i < newTickHistory.length - 1; i++) {
-              times.push(newTickHistory[i].timestamp - newTickHistory[i + 1].timestamp);
+              const timeDiff = newTickHistory[i].timestamp - newTickHistory[i + 1].timestamp;
+              const tickDiff = newTickHistory[i].tick - newTickHistory[i + 1].tick;
+              
+              // Solo considerar diferencias válidas (no deberían ser negativas)
+              if (timeDiff > 0 && tickDiff > 0) {
+                // Calcular tiempo por tick para casos donde hay más de un tick de diferencia
+                const timePerTick = timeDiff / tickDiff;
+                times.push(timePerTick);
+                tickDiffs.push(tickDiff);
+              }
             }
-            averageTickTime = times.reduce((sum, time) => sum + time, 0) / times.length;
+            
+            // Calcular promedio solo si hay valores válidos
+            if (times.length > 0) {
+              averageTickTime = times.reduce((sum, time) => sum + time, 0) / times.length;
+              
+              // Registrar datos para depuración
+              console.log('Tiempos entre ticks:', times);
+              console.log('Diferencias de ticks:', tickDiffs);
+              console.log('Tiempo promedio calculado:', averageTickTime);
+            }
           }
           
           return { 
@@ -101,14 +167,16 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
               averageTickTime
             },
             tickHistory: newTickHistory,
-            error: null 
+            error: null,
+            lastRefresh: Date.now()
           };
         });
       } catch (error) {
         console.error('Error al obtener estadísticas de red:', error);
         setState(prev => ({ 
           ...prev, 
-          error: 'Error de conexión con el nodo Qubic. Por favor, verifica tu conexión.'
+          error: 'Error de conexión con el nodo Qubic. Por favor, verifica tu conexión.',
+          lastRefresh: Date.now()
         }));
       }
     };
@@ -116,7 +184,7 @@ export const QubicProvider: React.FC<QubicProviderProps> = ({ children }) => {
     // Llamar inmediatamente
     fetchNetworkStats();
 
-    // Configurar intervalo para actualizar periódicamente
+    // Configurar intervalo para actualizar periódicamente cada 1 segundo
     const interval = setInterval(fetchNetworkStats, config.networkRefreshInterval);
 
     // Limpiar intervalo al desmontar
